@@ -1,5 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.http import HttpResponse
+
 # from sensor_app import views
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
