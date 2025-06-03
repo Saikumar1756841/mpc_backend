@@ -1,229 +1,283 @@
 from django.shortcuts import render
-from .serializers import SensorSerializer, LiveSensorSerializer, LocationSerializer, UserLogsSerializer, UserInteractionSerializer
-from .models import Sensor, Location, LiveSensor, User, UserLogs, UserInteraction
-from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.renderers import JSONRenderer
-from django.http import HttpResponse
-import ast
-import random
-import requests
-from decouple import config
-import datetime
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
+from django.http import HttpResponse
+from rest_framework.renderers import JSONRenderer
+from rest_framework.permissions import AllowAny
+from rest_framework.decorators import api_view, permission_classes
+
+
+import datetime
+
+from .models import Sensor, Location, LiveSensor, User, UserLogs, UserInteraction
+from .serializers import (
+    SensorSerializer,
+    LiveSensorSerializer,
+    LocationSerializer,
+    UserLogsSerializer,
+    UserInteractionSerializer,
+)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny]) 
+def sensor_create_api(request):
+    data = request.data
+
+    # Accepting 'location' key for location ID from frontend
+    location_id = data.get('location')
+    if not location_id:
+        return Response({"error": "Missing location ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        location_obj = Location.objects.get(locId=location_id)
+    except Location.DoesNotExist:
+        return Response({"error": "Invalid location ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+    sensor_data = {
+        'name': data.get('name'),
+        'sensor_id': data.get('sensor_id'),
+        'unit': data.get('unit'),
+        'location': location_obj.id,
+    }
+
+    serializer = SensorSerializer(data=sensor_data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({"message": "Sensor created successfully!"}, status=status.HTTP_201_CREATED)
+    else:
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class GetSensorAPIView(APIView):
-    sensor_serializer_class = SensorSerializer
-    # Get a particular sensor
+    serializer_class = SensorSerializer
 
     def post(self, request, format=None):
-        data = request.data
-        sensor_id = data["sensor_id"]
-        if (Sensor.objects.filter(sensor_id=sensor_id).exists()):
-            req_sensor = Sensor.objects.filter(sensor_id=sensor_id).first()
-            return Response(req_sensor, status=status.HTTP_200_OK)
-        return Response({"Error": "No Sensor found with these credentials"}, status=status.HTTP_400_BAD_REQUEST)
+        sensor_id = request.data.get("sensor_id")
+        if not sensor_id:
+            return Response({"error": "Missing sensor_id"}, status=status.HTTP_400_BAD_REQUEST)
 
-# In this class, we receive data of sensors coming from Microcontrollers.
+        try:
+            sensor = Sensor.objects.get(sensor_id=sensor_id)
+            serializer = self.serializer_class(sensor)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Sensor.DoesNotExist:
+            return Response({"error": "No sensor found with these credentials"}, status=status.HTTP_404_NOT_FOUND)
 
 
 class LiveSensorAPIView(APIView):
-    live_sensor_serializer_class = LiveSensorSerializer
+    serializer_class = LiveSensorSerializer
 
     def get(self, request):
-        return Response({"Success": "Get the data"}, status=status.HTTP_200_OK)
+        return Response({"success": "Get the data"}, status=status.HTTP_200_OK)
 
     def post(self, request, format=None):
         res = request.data
-        # print(res)
-        data = res['data']
-        sensor_id = res['id']
-        timestamp = str(datetime.datetime.now())
-        print(res)
-        # return Response({"Success": "Get the data"}, status=status.HTTP_200_OK)
 
-        # Finding sensor with the given id
-        if (Sensor.objects.filter(sensor_id=sensor_id).exists()):
-            req_sensor = Sensor.objects.filter(sensor_id=sensor_id).first()
-            livedata = LiveSensor(
-                sensor=req_sensor, data=data, timestamp=timestamp)
-            livedata.save()
-            return Response({"Success": "Get the data"}, status=status.HTTP_200_OK)
-        else:
-            return Response({"Error": "No sensor found with this given ID"}, status=status.HTTP_404_NOT_FOUND)
+        sensor_id = res.get('id')
+        data = res.get('data')
+
+        if sensor_id is None or data is None:
+            return Response({"error": "Missing 'id' or 'data' in request"}, status=status.HTTP_400_BAD_REQUEST)
+
+        timestamp = datetime.datetime.now()
+
+        try:
+            sensor = Sensor.objects.get(sensor_id=sensor_id)
+        except Sensor.DoesNotExist:
+            return Response({"error": "No sensor found with this given ID"}, status=status.HTTP_404_NOT_FOUND)
+
+        livedata = LiveSensor(sensor=sensor, data=data, timestamp=timestamp)
+        livedata.save()
+
+        return Response({"success": "Data received and saved"}, status=status.HTTP_201_CREATED)
 
 
 class SensorAPIView(APIView):
-    sensor_serializer_class = SensorSerializer
+    serializer_class = SensorSerializer
 
-    # Get all sensors
     def get(self, request, format=None):
         all_sensors = Sensor.objects.all()
-        stu_serialized = SensorSerializer(all_sensors, many=True)
-        json_object = JSONRenderer().render(stu_serialized.data)
-        return HttpResponse(json_object, content_type="application/Json")
+        serializer = self.serializer_class(all_sensors, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # Delete the sensor
     def delete(self, request, format=None):
-        data = request.data
-        sensor_id = data["sensor_id"]
-        if (Sensor.objects.filter(sensor_id=sensor_id).exists()):
-            req_sensor = Sensor.objects.filter(sensor_id=sensor_id).first()
-            req_sensor.delete()
-            location = Location.objects.all()
-            loc_serialized = LocationSerializer(location, many=True)
-            return Response(loc_serialized.data, status=status.HTTP_200_OK)
-        return Response("No Sensor found with this ID", status=status.HTTP_400_BAD_REQUEST)
+        sensor_id = request.data.get("sensor_id")
+        if not sensor_id:
+            return Response({"error": "Missing sensor_id"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # API to add/update a new sensor
+        try:
+            sensor = Sensor.objects.get(sensor_id=sensor_id)
+            sensor.delete()
+            return Response({"message": "Sensor deleted successfully"}, status=status.HTTP_200_OK)
+        except Sensor.DoesNotExist:
+            return Response({"error": "No sensor found with this ID"}, status=status.HTTP_404_NOT_FOUND)
+
     def post(self, request, format=None):
         data = request.data
-        name = data['name']
-        id = data['sensor_id']
-        unit = data['unit']
-        locationID = data['locationID']
+        name = data.get('name')
+        sensor_id = data.get('sensor_id')
+        unit = data.get('unit')
+        location_id = data.get('locationID')
 
-        # Checking the exixting of a sensor
-        if Sensor.objects.filter(sensor_id=id).exists():
-            if (Location.objects.filter(locId=locationID).exists()):
-                location = Location.objects.filter(locId=locationID).first()
-                sensor = Sensor.objects.filter(sensor_id=id).first()
-                sensor.location = location
-                sensor.name = name
-                sensor.unit = unit
-                sensor.save()
-                return Response("Data Updated Succesfully", status=status.HTTP_200_OK)
-            else:
-                return Response("No Location found with this ID", status=status.HTTP_400_BAD_REQUEST)
-        else:
-            # Check locationID is correct or not
-            if (Location.objects.filter(locId=locationID).exists()):
-                location = Location.objects.filter(locId=locationID).first()
-                sensor = Sensor(location=location, name=name,
-                                sensor_id=id, unit=unit)
-                sensor.save()
-                return Response("Sensor added succesfully", status=status.HTTP_200_OK)
-            else:
-                print("No Location found with this ID")
-                return Response("No Location found with this ID", status=status.HTTP_400_BAD_REQUEST)
+        if not all([name, sensor_id, unit, location_id]):
+            return Response({"error": "Missing required fields"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # API to update the sensor data
+        try:
+            location = Location.objects.get(locId=location_id)
+        except Location.DoesNotExist:
+            return Response({"error": "No location found with this ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update existing sensor
+        sensor_qs = Sensor.objects.filter(sensor_id=sensor_id)
+        if sensor_qs.exists():
+            sensor = sensor_qs.first()
+            sensor.name = name
+            sensor.unit = unit
+            sensor.location = location
+            sensor.save()
+            return Response({"message": "Sensor updated successfully"}, status=status.HTTP_200_OK)
+
+        # Create new sensor
+        sensor = Sensor(name=name, sensor_id=sensor_id, unit=unit, location=location)
+        sensor.save()
+        return Response({"message": "Sensor added successfully"}, status=status.HTTP_201_CREATED)
 
     def put(self, request, format=None):
         data = request.data
-        sensor_serializer = self.sensor_serializer_class(data=data)
-        if sensor_serializer.is_valid():
-            sensor_serializer.save()
-            return Response(sensor_serializer, status=status.HTTP_200_OK)
+        sensor_id = data.get('sensor_id')
+        if not sensor_id:
+            return Response({"error": "Missing sensor_id"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            sensor = Sensor.objects.get(sensor_id=sensor_id)
+        except Sensor.DoesNotExist:
+            return Response({"error": "Sensor not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.serializer_class(sensor, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
         else:
-            return Response(sensor_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LocationAPIView(APIView):
-    location_serializer_class = LocationSerializer
+    serializer_class = LocationSerializer
     permission_classes = [IsAuthenticated]
-    # Get all locations
 
     def get(self, request, format=None):
         user = request.user
-        all_locations = []
-        if user.is_staff is True:
-            all_locations = Location.objects.all()
+        if user.is_staff:
+            locations = Location.objects.all()
         else:
-            all_locations = Location.objects.filter(user=user)
-        loc_serialized = LocationSerializer(all_locations, many=True).data
-        return Response(loc_serialized, status=status.HTTP_200_OK)
+            locations = Location.objects.filter(user=user)
+        serializer = self.serializer_class(locations, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # Delete the location
     def delete(self, request, format=None):
-        data = request.data
-        sensor_id = data["sensor_id"]
-        if (Sensor.objects.filter(sensor_id=sensor_id).exists()):
-            req_sensor = Sensor.objects.filter(sensor_id=sensor_id).first()
-            req_sensor.delete()
-            all_sensors = Sensor.objects.all()
-            stu_serialized = SensorSerializer(all_sensors, many=True)
-            return Response(stu_serialized.data, status=status.HTTP_200_OK)
-        return Response({"Error": "No Sensor found with this ID"}, status=status.HTTP_400_BAD_REQUEST)
+        location_id = request.data.get("location_id")
+        if not location_id:
+            return Response({"error": "Missing location_id"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # API to update the location data
+        try:
+            location = Location.objects.get(locId=location_id)
+            location.delete()
+            return Response({"message": "Location deleted successfully"}, status=status.HTTP_200_OK)
+        except Location.DoesNotExist:
+            return Response({"error": "No location found with this ID"}, status=status.HTTP_404_NOT_FOUND)
+
     def put(self, request, format=None):
         data = request.data
-        sensor_serializer = self.sensor_serializer_class(data=data)
-        if sensor_serializer.is_valid():
-            sensor_serializer.save()
-            return Response(sensor_serializer, status=status.HTTP_200_OK)
-        else:
-            return Response(sensor_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        location_id = data.get('locId')
+        if not location_id:
+            return Response({"error": "Missing locId"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            location = Location.objects.get(locId=location_id)
+        except Location.DoesNotExist:
+            return Response({"error": "Location not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.serializer_class(location, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class DeviceAPIView(APIView):
-    # API to get all devices
     def get(self, request):
-        all_devices = Location.objects.all()
-        devices_serialized = LocationSerializer(all_devices, many=True).data
-        return Response(devices_serialized, status=status.HTTP_200_OK)
-
-    # API to add a new device
+        devices = Location.objects.all()
+        serializer = LocationSerializer(devices, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, format=None):
-        data = request.data
-        userId = data["user"]
-        deviceName = data["name"]
-        user = User.objects.filter(id=userId).first()
-        device = Location(user=user, name=deviceName)
+        user_id = request.data.get("user")
+        device_name = request.data.get("name")
+
+        if not all([user_id, device_name]):
+            return Response({"error": "Missing user or name"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        device = Location(user=user, name=device_name)
         device.save()
-        return Response({"Success"}, status=status.HTTP_200_OK)
+        return Response({"message": "Device added successfully"}, status=status.HTTP_201_CREATED)
 
 
 class UserLogsAPIView(APIView):
-    # Get all user logs
     def get(self, request):
         all_userlogs = UserLogs.objects.order_by('-timestamp')
-        userlogs_serialized = UserLogsSerializer(all_userlogs, many=True).data
-        # Marking all previously sent logs
-        for log in all_userlogs:
-            log.isSeen = True
-            log.save()
-        return Response(userlogs_serialized, status=status.HTTP_200_OK)
+        serializer = UserLogsSerializer(all_userlogs, many=True)
 
-    # Post the logs
+        # Mark all logs as seen
+        for log in all_userlogs:
+            if not log.isSeen:
+                log.isSeen = True
+                log.save()
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def post(self, request):
         user = request.user
-        data = request.data
-        log = UserLogs(userName=user.name, data=data['data'])
+        data = request.data.get('data')
+        if not data:
+            return Response({"error": "Missing log data"}, status=status.HTTP_400_BAD_REQUEST)
+
+        log = UserLogs(userName=user.name, data=data)
         log.save()
-        return Response({"Success": "Logs saved succesfully"}, status=status.HTTP_200_OK)
-    
+        return Response({"message": "Logs saved successfully"}, status=status.HTTP_201_CREATED)
+
 
 class UserInteractionAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
     def post(self, request):
         user = request.user
-        print(user.name)
-        if UserInteraction.objects.filter(date=datetime.date.today()).exists():
-            obj = UserInteraction.objects.filter(date=datetime.date.today()).first()
-            time = obj.time
-            time = int(time) + 5
-            obj.time = str(time)
-            obj.save()
-        else:
-            obj = UserInteraction(user=user, time="0")
-            obj.save()
-        return Response({"Success": "Get the data"}, status=status.HTTP_200_OK)
+        today = datetime.date.today()
 
-        all_userlogs = UserLogs.objects.order_by('-timestamp')
-        userlogs_serialized = UserLogsSerializer(all_userlogs, many=True).data
-        # Marking all previously sent logs
-        for log in all_userlogs:
-            log.isSeen = True
-            log.save()
-        return Response(userlogs_serialized, status=status.HTTP_200_OK)
-    
+        # Check if an entry exists for this user and today's date
+        obj, created = UserInteraction.objects.get_or_create(user=user, date=today, defaults={'time': '0'})
+
+        # Increase time by 5 (assume time stored as string integer)
+        try:
+            current_time = int(obj.time)
+        except (ValueError, TypeError):
+            current_time = 0
+
+        current_time += 5
+        obj.time = str(current_time)
+        obj.save()
+
+        return Response({"message": "User interaction time updated"}, status=status.HTTP_200_OK)
+
     def get(self, request):
-        user_interaction = UserInteraction.objects.filter(user=request.user).all()
-        user_interaction_serialized = UserInteractionSerializer(user_interaction, many=True).data
-        return Response(user_interaction_serialized, status=status.HTTP_200_OK)
-
+        user_interactions = UserInteraction.objects.filter(user=request.user)
+        serializer = UserInteractionSerializer(user_interactions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

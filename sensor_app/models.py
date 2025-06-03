@@ -14,22 +14,30 @@ class Location(models.Model):
     def __str__(self):
         return f"{self.name} ({self.user.name})"
 
+
+
+from django.conf import settings
+
 class Sensor(models.Model):
-    location = models.ForeignKey(Location, related_name='sensors', on_delete=models.CASCADE)
-    name = models.CharField(max_length=100, blank=False, null=False)
-    sensor_id = models.CharField(max_length=100, blank=False, null=False, unique=True)
-    unit = models.CharField(max_length=100, blank=False, null=False)
+    location = models.ForeignKey('Location', related_name='sensors', on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='assigned_sensors',  # This enables user.assigned_sensors.all()
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    name = models.CharField(max_length=100)
+    sensor_id = models.CharField(max_length=100, unique=True)
+    unit = models.CharField(max_length=100)
 
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.sensor_id})"
 
 class LiveSensor(models.Model):
     sensor = models.ForeignKey(Sensor, related_name='live_sensors', on_delete=models.CASCADE)
     data = models.CharField(max_length=100, blank=False, null=False)
-    timestamp = models.DateTimeField(auto_now=False, auto_now_add=True)
-
-    def __str__(self):
-        return self.sensor.name
+    timestamp = models.DateTimeField(auto_now=False, auto_now_add=True)    
     
 class UserLogs(models.Model):
     userName = models.CharField(max_length=100, blank=False, null=False, default="Default User")

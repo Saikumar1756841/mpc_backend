@@ -4,11 +4,67 @@ from rest_framework.views import APIView
 from .models import User
 from .serializers import SendPasswordResetEmailSerializer, UserChangePasswordSerializer, UserLoginSerializer, UserPasswordResetSerializer, UserProfileSerializer, UserRegistrationSerializer
 from django.contrib.auth import authenticate
+from sensor_app.models import Sensor
+
 from .renderers import UserRenderer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 from sensor_app.models import UserLogs
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from django.db import transaction
+
+class DeviceCreateView(APIView):
+    def post(self, request):
+        serializer = DeviceSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+def create_user_with_sensors(request):
+    try:
+        data = request.data
+ 
+        email = data.get('email')
+        username = data.get('name')  # from your form's "Name"
+        password = data.get('password')
+        confirm_password = data.get('confirm_password') or data.get('confirmPassword')
+        is_admin = data.get('is_admin', False)
+        sensor_ids = data.get('sensor_ids', []) or data.get('sensors') or []
+
+        # Validate required fields
+        if not email or not username or not password or not confirm_password:
+            return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if password != confirm_password:
+            return Response({'error': 'Passwords do not match'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            # Create user
+            user = User.objects.create_user(
+                name=username,
+                email=email,
+                password=password,
+                tc=True,   # or get from request if needed
+                is_admin=is_admin  # Mark admin user if checked
+            )
+
+            # Assign sensors to user (assuming ForeignKey in Sensor model)
+            sensors = Sensor.objects.filter(id__in=sensor_ids)
+            for sensor in sensors:
+                sensor.user = user
+                sensor.save()
+
+        return Response({'message': 'User created successfully'}, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
 
 # Generate Token Manually
 def get_tokens_for_user(user):

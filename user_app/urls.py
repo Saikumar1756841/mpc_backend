@@ -1,4 +1,5 @@
 from django.urls import path
+from .views import create_user_with_sensors
 from .views import UserLoginView, UserRegistrationView, UserProfileAPIView, GetAllUsersAPIView
 urlpatterns = [
     path('register/', UserRegistrationView.as_view(), name='register'),
@@ -6,4 +7,5 @@ urlpatterns = [
     path('getUser/', UserProfileAPIView.as_view(), name='getUser'),
     path('getAllUsers/', GetAllUsersAPIView.as_view(), name='getAllUsers'),
     # path('logout/', UserLogoutAPIView.as_view(), name='logout'),
+    path('createUserWithSensors/', create_user_with_sensors),
 ]
