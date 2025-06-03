@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 from decouple import config
 from datetime import timedelta
+from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,6 +51,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",  # ✅ Move this to the very top
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -57,9 +59,14 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
 ]
 
+# -------------- ✅ Disable `CORS_ORIGIN_ALLOW_ALL`, use allowed origins instead
+# CORS_ORIGIN_ALLOW_ALL = True  ❌ REMOVE THIS
+
+CORS_ALLOWED_ORIGINS = [  # ✅ ONLY your frontend domain here
+    "https://mpc-frontend-master1-sza9.vercel.app",
+]
 ROOT_URLCONF = "iot_web.urls"
 
 CORS_ORIGIN_ALLOW_ALL = True
