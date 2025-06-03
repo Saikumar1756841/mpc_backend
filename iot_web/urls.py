@@ -6,7 +6,13 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
+def home(request):
+    return HttpResponse("Welcome to the homepage!")
+
+
+
 urlpatterns = [
+    path('', home),
     path("admin/", admin.site.urls),
     path("api/", include("sensor_app.urls")),
     path("accounts/", include("user_app.urls")),
