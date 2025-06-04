@@ -65,7 +65,7 @@ MIDDLEWARE = [
 # CORS_ORIGIN_ALLOW_ALL = True  ❌ REMOVE THIS
 
 CORS_ALLOWED_ORIGINS = [  # ✅ ONLY your frontend domain here
-    "mpc-frontend-master1-t1hn.vercel.app",
+    "mpc-frontend-master1-lon6.vercel.app",
 ]
 ROOT_URLCONF = "iot_web.urls"
 
